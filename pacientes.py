@@ -52,7 +52,10 @@ def tela_cadastrar_paciente() -> None:
     idade = ler_inteiro("Idade", 0, 120)
     localizacao = ler_texto("Localizacao remota/base/comunidade")
     funcao = ler_texto("Funcao ou perfil (ex: morador, agente, pesquisador)")
-    condicoes_texto = ler_texto("Condicoes previas separadas por virgula", obrigatorio=False)
+    condicoes_texto = ler_texto(
+        "Condicoes previas/antecedentes separados por virgula (ex: asma, diabetes)",
+        obrigatorio=False,
+    )
     condicoes = [item.strip() for item in condicoes_texto.split(",") if item.strip()]
 
     paciente = cadastrar_paciente(nome, idade, localizacao, funcao, condicoes)
@@ -68,7 +71,12 @@ def tela_listar_pacientes() -> None:
         print("Nenhum paciente cadastrado.")
     else:
         for paciente in pacientes:
-            print(f"{paciente['id']:03d} | {paciente['nome']} | {paciente['idade']} anos | {paciente['localizacao']}")
+            condicoes = ", ".join(paciente.get("condicoes", [])) or "Nenhuma"
+            print(
+                f"{paciente['id']:03d} | {paciente['nome']} | "
+                f"{paciente['idade']} anos | {paciente['localizacao']} | "
+                f"Condicoes: {condicoes}"
+            )
     pausar()
 
 
@@ -103,4 +111,3 @@ def menu_pacientes() -> None:
         else:
             print("Opcao invalida.")
             pausar()
-
