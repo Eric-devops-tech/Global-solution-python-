@@ -1,0 +1,14 @@
+[
+    {
+        "id": 1,
+        "nome": "jose maciel",
+        "idade": 15,
+        "localizacao": "ribeirinhos",
+        "funcao": "morador",
+        "condicoes": [
+            "tosse",
+            "temperatura alta"
+        ],
+        "criado_em": "2026-06-04T16:42:14"
+    }
+]
