@@ -10,5 +10,16 @@
             "temperatura alta"
         ],
         "criado_em": "2026-06-04T16:42:14"
+    },
+    {
+        "id": 2,
+        "nome": "junior maciel",
+        "idade": 12,
+        "localizacao": "ribeirinhos",
+        "funcao": "agente",
+        "condicoes": [
+            "asma"
+        ],
+        "criado_em": "2026-06-04T17:44:35"
     }
 ]
