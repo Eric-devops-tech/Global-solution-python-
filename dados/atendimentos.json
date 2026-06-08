@@ -1,1 +1,42 @@
-[]
+[
+    {
+        "id": 1,
+        "paciente_id": 1,
+        "data": "2026-06-04T17:51:16",
+        "sinais": {
+            "temperatura": 37.0,
+            "saturacao": 55,
+            "frequencia_cardiaca": 120,
+            "pressao_sistolica": 50,
+            "pressao_diastolica": 50
+        },
+        "sintomas": {
+            "dor_peito": false,
+            "falta_ar": true,
+            "confusao": false,
+            "desmaio": true,
+            "sangramento": false,
+            "febre_persistente": false,
+            "vomitos": false,
+            "dor_forte": false
+        },
+        "contexto": {
+            "distancia_hospital_km": 80.0,
+            "internet_disponivel": true,
+            "medicamentos_basicos": true
+        },
+        "avaliacao": {
+            "pontuacao": 17,
+            "nivel": "EMERGENCIA",
+            "alertas": [
+                "saturacao muito baixa",
+                "frequencia cardiaca alterada",
+                "hipotensao",
+                "falta de ar",
+                "desmaio",
+                "distancia relevante de suporte medico"
+            ],
+            "recomendacao": "Acionar evacuacao/resgate, manter monitoramento continuo e contato medico remoto prioritario."
+        }
+    }
+]

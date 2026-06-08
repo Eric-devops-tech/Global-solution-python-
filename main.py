@@ -1,5 +1,6 @@
 from armazenamento import garantir_estrutura
 from atendimentos import menu_atendimentos
+from database_oracle import menu_oracle
 from pacientes import menu_pacientes
 from relatorios import menu_relatorios
 from util import pausar, titulo
@@ -23,7 +24,8 @@ def menu_principal() -> None:
         print("1. Pacientes e tripulantes")
         print("2. Atendimentos, sinais vitais e triagem")
         print("3. Relatorios e casos criticos")
-        print("4. Sobre o sistema")
+        print("4. Banco de Dados Oracle")
+        print("5. Sobre o sistema")
         print("0. Sair")
 
         opcao = input("\nOpcao: ").strip()
@@ -34,6 +36,8 @@ def menu_principal() -> None:
         elif opcao == "3":
             menu_relatorios()
         elif opcao == "4":
+            menu_oracle()
+        elif opcao == "5":
             exibir_sobre()
         elif opcao == "0":
             print("\nEncerrando o AstraCare. Dados locais preservados.")
@@ -45,4 +49,3 @@ def menu_principal() -> None:
 
 if __name__ == "__main__":
     menu_principal()
-
