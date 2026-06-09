@@ -45,7 +45,7 @@ def configurar_conexao() -> dict:
     return CONFIG_ORACLE
 
 
-def obtener_configuracao() -> dict:
+def obter_configuracao() -> dict:
     if CONFIG_ORACLE is None:
         return configurar_conexao()
 
@@ -81,111 +81,17 @@ def testar_conexao(config: dict) -> bool:
             with conexao.cursor() as cursor:
                 cursor.execute("SELECT 'CONEXAO OK' AS status FROM dual")
                 status = cursor.fetchone()[0]
-                print(f"Resultado: {status}")
+                print(f"Resultado da conexao: {status}")
                 return True
     except Exception as erro:
         print(f"Falha ao conectar no Oracle: {erro}")
         return False
 
 
-def ejecutar_ddl(cursor, sql: str, nome_tabela: str) -> None:
-    try:
-        cursor.execute(sql)
-        print(f"Tabela {nome_tabela} criada com sucesso.")
-    except Exception as erro:
-        mensagem = str(erro)
-        if "ORA-00955" in mensagem:
-            print(f"Tabela {nome_tabela} ja existe. Continuando...")
-        else:
-            raise
-
-
-def criar_tabelas_demo(config: dict) -> bool:
-    tabelas = [
-        (
-            "ASTRA_REGIAO_DEMO",
-            """
-            CREATE TABLE astra_regiao_demo (
-                id_regiao NUMBER NOT NULL,
-                nome VARCHAR2(80) NOT NULL,
-                tipo VARCHAR2(30) NOT NULL,
-                distancia_hospital_km NUMBER(6,2) NOT NULL,
-                internet_disponivel CHAR(1) NOT NULL,
-                CONSTRAINT pk_astra_regiao_demo PRIMARY KEY (id_regiao),
-                CONSTRAINT uk_astra_regiao_demo_nome UNIQUE (nome),
-                CONSTRAINT ck_astra_regiao_demo_net CHECK (internet_disponivel IN ('S', 'N'))
-            )
-            """,
-        ),
-        (
-            "ASTRA_PACIENTE_DEMO",
-            """
-            CREATE TABLE astra_paciente_demo (
-                id_paciente NUMBER NOT NULL,
-                id_regiao NUMBER NOT NULL,
-                nome VARCHAR2(100) NOT NULL,
-                idade NUMBER(3) NOT NULL,
-                perfil VARCHAR2(40) NOT NULL,
-                CONSTRAINT pk_astra_paciente_demo PRIMARY KEY (id_paciente),
-                CONSTRAINT fk_astra_paciente_regiao FOREIGN KEY (id_regiao) 
-                    REFERENCES astra_regiao_demo(id_regiao),
-                CONSTRAINT ck_astra_paciente_idade CHECK (idade BETWEEN 0 AND 120)
-            )
-            """,
-        ),
-        (
-            "ASTRA_ATENDIMENTO_DEMO",
-            """
-            CREATE TABLE astra_atendimento_demo (
-                id_atendimento NUMBER NOT NULL,
-                id_paciente NUMBER NOT NULL,
-                nivel_risco VARCHAR2(20) NOT NULL,
-                pontuacao_risco NUMBER(3) NOT NULL,
-                recomendacao VARCHAR2(250) NOT NULL,
-                CONSTRAINT pk_astra_atendimento_demo PRIMARY KEY (id_atendimento),
-                CONSTRAINT fk_astra_atendimento_paciente FOREIGN KEY (id_paciente) 
-                    REFERENCES astra_paciente_demo(id_paciente),
-                CONSTRAINT ck_astra_atendimento_nivel 
-                    CHECK (nivel_risco IN ('BAIXO', 'ATENCAO', 'URGENTE', 'EMERGENCIA'))
-            )
-            """,
-        ),
-        (
-            "ASTRA_SINAL_VITAL_DEMO",
-            """
-            CREATE TABLE astra_sinal_vital_demo (
-                id_atendimento NUMBER NOT NULL,
-                temperatura NUMBER(4,1) NOT NULL,
-                saturacao NUMBER(3) NOT NULL,
-                frequencia_cardiaca NUMBER(3) NOT NULL,
-                pressao_sistolica NUMBER(3) NOT NULL,
-                pressao_diastolica NUMBER(3) NOT NULL,
-                CONSTRAINT pk_astra_sinal_vital_demo PRIMARY KEY (id_atendimento),
-                CONSTRAINT fk_astra_sinal_atendimento FOREIGN KEY (id_atendimento) 
-                    REFERENCES astra_atendimento_demo(id_atendimento)
-            )
-            """,
-        ),
-    ]
-
-    try:
-        with conectar(config) as conexao:
-            if conexao is None:
-                return False
-
-            with conexao.cursor() as cursor:
-                for nome_tabela, sql in tabelas:
-                    executar_ddl(cursor, sql, nome_tabela)
-            conexao.commit()
-            return True
-    except Exception as erro:
-        print(f"Erro ao criar tabelas demonstrativas: {erro}")
-        return False
-
-
 def obter_id_regiao(cursor, nome_regiao: str, distancia: float = 0, internet: str = "N") -> int:
+    """Busca o ID da regiao oficial ou insere se nao existir, tratando a UF obrigatoria."""
     cursor.execute(
-        "SELECT id_regiao FROM astra_regiao_demo WHERE UPPER(nome) = UPPER(:nome)",
+        "SELECT id_regiao FROM regiao_isolada WHERE UPPER(nome) = UPPER(:nome)",
         nome=nome_regiao,
     )
     linha = cursor.fetchone()
@@ -193,7 +99,7 @@ def obter_id_regiao(cursor, nome_regiao: str, distancia: float = 0, internet: st
         id_regiao = linha[0]
         cursor.execute(
             """
-            UPDATE astra_regiao_demo
+            UPDATE regiao_isolada
                SET distancia_hospital_km = :distancia,
                    internet_disponivel = :internet
              WHERE id_regiao = :id_regiao
@@ -204,18 +110,33 @@ def obter_id_regiao(cursor, nome_regiao: str, distancia: float = 0, internet: st
         )
         return id_regiao
 
-    cursor.execute("SELECT NVL(MAX(id_regiao), 0) + 1 FROM astra_regiao_demo")
+    # Se a regiao nao existe, gera um novo ID incremental
+    cursor.execute("SELECT NVL(MAX(id_regiao), 0) + 1 FROM regiao_isolada")
     id_regiao = cursor.fetchone()[0]
+    
+    # Define uma UF padrao de contingencia caso nao consiga deduzir do nome
+    uf_padrao = "SP"
+    nome_maiusculo = nome_regiao.upper()
+    
+    # Pequena inteligencia para tentar adivinhar a UF com base nos seus dados do DDL
+    if "AMAZONAS" in nome_maiusculo or "ARUANA" in nome_maiusculo or "RIO AZUL" in nome_maiusculo:
+        uf_padrao = "AM"
+    elif "AURORA" in nome_maiusculo or "SUL" in nome_maiusculo:
+        uf_padrao = "RS"
+    elif "LUCAS" in nome_maiusculo or "RIO" in nome_maiusculo:
+        uf_padrao = "RJ"
+
     cursor.execute(
         """
-        INSERT INTO astra_regiao_demo (
-            id_regiao, nome, tipo, distancia_hospital_km, internet_disponivel
+        INSERT INTO regiao_isolada (
+            id_regiao, nome, tipo, uf, distancia_hospital_km, internet_disponivel
         ) VALUES (
-            :id_regiao, :nome, 'ESTACAO_REMOTA', :distancia, :internet
+            :id_regiao, :nome, 'ESTACAO_REMOTA', :uf, :distancia, :internet
         )
         """,
         id_regiao=id_regiao,
         nome=nome_regiao,
+        uf=uf_padrao,
         distancia=distancia,
         internet=internet,
     )
@@ -223,6 +144,7 @@ def obter_id_regiao(cursor, nome_regiao: str, distancia: float = 0, internet: st
 
 
 def salvar_paciente_no_oracle(config: dict, paciente: dict) -> bool:
+    """Insere ou atualiza o paciente na tabela oficial PACIENTE."""
     try:
         with conectar(config) as conexao:
             if conexao is None:
@@ -232,7 +154,7 @@ def salvar_paciente_no_oracle(config: dict, paciente: dict) -> bool:
                 id_regiao = obter_id_regiao(cursor, paciente["localizacao"])
                 cursor.execute(
                     """
-                    MERGE INTO astra_paciente_demo p
+                    MERGE INTO paciente p
                     USING (
                         SELECT :id_paciente id_paciente,
                                :id_regiao id_regiao,
@@ -255,17 +177,22 @@ def salvar_paciente_no_oracle(config: dict, paciente: dict) -> bool:
                     id_regiao=id_regiao,
                     nome=paciente["nome"],
                     idade=paciente["idade"],
-                    perfil=paciente["funcao"].upper()[:40],
+                    perfil=(
+                        paciente["funcao"].upper()[:40] 
+                        if paciente["funcao"].upper() in ('MORADOR', 'AGENTE_SAUDE', 'PESQUISADOR', 'TRIPULANTE', 'TECNICO') 
+                        else 'TRIPULANTE'
+),
                 )
             conexao.commit()
-            print(f"Paciente '{paciente['nome']}' sincronizado no Oracle.")
+            print(f"Paciente '{paciente['nome']}' sincronizado nas tabelas oficiais.")
             return True
     except Exception as erro:
-        print(f"Erro ao salvar paciente no Oracle: {erro}")
+        print(f"[ERRO BANCO PACIENTE] Falha ao enviar para tabela oficial: {erro}")
         return False
 
 
 def salvar_atendimento_no_oracle(config: dict, paciente: dict, atendimento: dict) -> bool:
+    """Desmembra e envia o atendimento para ATENDIMENTO e SINAL_VITAL oficiais."""
     try:
         with conectar(config) as conexao:
             if conexao is None:
@@ -283,9 +210,11 @@ def salvar_atendimento_no_oracle(config: dict, paciente: dict, atendimento: dict
                     contexto["distancia_hospital_km"],
                     internet,
                 )
+                
+                # Sincroniza o dono do atendimento primeiro para evitar quebra de FK
                 cursor.execute(
                     """
-                    MERGE INTO astra_paciente_demo p
+                    MERGE INTO paciente p
                     USING (
                         SELECT :id_paciente id_paciente,
                                :id_regiao id_regiao,
@@ -310,9 +239,11 @@ def salvar_atendimento_no_oracle(config: dict, paciente: dict, atendimento: dict
                     idade=paciente["idade"],
                     perfil=paciente["funcao"].upper()[:40],
                 )
+                
+                # Envia para a tabela oficial de ATENDIMENTO
                 cursor.execute(
                     """
-                    MERGE INTO astra_atendimento_demo a
+                    MERGE INTO atendimento a
                     USING (
                         SELECT :id_atendimento id_atendimento,
                                :id_paciente id_paciente,
@@ -335,11 +266,13 @@ def salvar_atendimento_no_oracle(config: dict, paciente: dict, atendimento: dict
                     id_paciente=paciente["id"],
                     nivel_risco=avaliacao["nivel"],
                     pontuacao_risco=avaliacao["pontuacao"],
-                    recomendacao=avaliacao["recomendacao"][:250],
+                    recomendacao=avaliacao["recomendacao"][:300],
                 )
+                
+                # Envia para a tabela oficial de SINAL_VITAL
                 cursor.execute(
                     """
-                    MERGE INTO astra_sinal_vital_demo s
+                    MERGE INTO sinal_vital s
                     USING (
                         SELECT :id_atendimento id_atendimento,
                                :temperatura temperatura,
@@ -374,16 +307,16 @@ def salvar_atendimento_no_oracle(config: dict, paciente: dict, atendimento: dict
                     pressao_diastolica=sinais["pressao_diastolica"],
                 )
             conexao.commit()
-            print(f"Atendimento ID {atendimento['id']} sincronizado no Oracle.")
+            print(f"Atendimento ID {atendimento['id']} sincronizado nas tabelas oficiais.")
             return True
     except Exception as erro:
-        print(f"Erro ao salvar atendimento no Oracle: {erro}")
+        print(f"[ERRO BANCO ATENDIMENTO] Falha ao enviar para tabela oficial: {erro}")
         return False
 
 
 def sincronizar_dados_locais(config: dict) -> bool:
-    """Le os arquivos JSON locais e sincroniza em lote com o banco Oracle."""
-    titulo("Sincronizando JSON -> Oracle")
+    """Lê os arquivos JSON locais e joga em lote direto para as tabelas oficiais."""
+    titulo("Sincronizando JSON -> Tabelas Oficiais")
 
     pacientes_locais = listar_pacientes()
     atendimentos_locais = listar_atendimentos()
@@ -392,20 +325,17 @@ def sincronizar_dados_locais(config: dict) -> bool:
         print("Nenhum dado local encontrado nos arquivos JSON para sincronizar.")
         return True
 
-    # Garante que as tabelas existam antes de começar a carga
-    criar_tabelas_demo(config)
-
     sucesso_pacientes = True
     sucesso_atendimentos = True
 
     if pacientes_locais:
-        print(f"\nSincronizando {len(pacientes_locais)} pacientes...")
+        print(f"\nEnviando {len(pacientes_locais)} pacientes...")
         for paciente in pacientes_locais:
             if not salvar_paciente_no_oracle(config, paciente):
                 sucesso_pacientes = False
 
     if atendimentos_locais:
-        print(f"\nSincronizando {len(atendimentos_locais)} atendimentos...")
+        print(f"\nEnviando {len(atendimentos_locais)} atendimentos...")
         for atendimento in atendimentos_locais:
             paciente_correspondente = next(
                 (p for p in pacientes_locais if p["id"] == atendimento["paciente_id"]),
@@ -420,14 +350,15 @@ def sincronizar_dados_locais(config: dict) -> bool:
                 sucesso_atendimentos = False
 
     if sucesso_pacientes and sucesso_atendimentos:
-        print("\n[OK] Todos os dados do JSON foram salvos/atualizados com sucesso no Oracle!")
+        print("\n[OK] Sincronizacao em lote com as tabelas oficiais concluida!")
         return True
     else:
-        print("\n[!] Houve falhas ao sincronizar alguns registros locais.")
+        print("\n[!] Houve falhas. Verifique os logs de erro acima.")
         return False
 
 
-def listar_atendimentos_demo(config: dict) -> bool:
+def listar_atendimentos_oficiais(config: dict) -> bool:
+    """Busca os dados direto das suas tabelas oficiais via JOIN."""
     consulta = """
         SELECT
             p.nome,
@@ -438,10 +369,10 @@ def listar_atendimentos_demo(config: dict) -> bool:
             sv.saturacao,
             sv.temperatura,
             a.recomendacao
-        FROM astra_atendimento_demo a
-        JOIN astra_paciente_demo p ON p.id_paciente = a.id_paciente
-        JOIN astra_regiao_demo r ON r.id_regiao = p.id_regiao
-        LEFT JOIN astra_sinal_vital_demo sv ON sv.id_atendimento = a.id_atendimento
+        FROM atendimento a
+        JOIN paciente p ON p.id_paciente = a.id_paciente
+        JOIN regiao_isolada r ON r.id_regiao = p.id_regiao
+        LEFT JOIN sinal_vital sv ON sv.id_atendimento = a.id_atendimento
         ORDER BY a.pontuacao_risco DESC
     """
 
@@ -455,7 +386,7 @@ def listar_atendimentos_demo(config: dict) -> bool:
                 linhas = cursor.fetchall()
 
                 if not linhas:
-                    print("Nenhum atendimento encontrado no banco Oracle.")
+                    print("Nenhum atendimento encontrado nas tabelas oficiais do Oracle.")
                     return True
 
                 for nome, idade, regiao, nivel, pontos, saturacao, temperatura, recomendacao in linhas:
@@ -467,18 +398,17 @@ def listar_atendimentos_demo(config: dict) -> bool:
                     print(f"Recomendacao: {recomendacao}")
                 return True
     except Exception as erro:
-        print(f"Erro ao consultar dados do Oracle: {erro}")
+        print(f"Erro ao consultar dados oficiais do Oracle: {erro}")
         return False
 
 
 def menu_oracle() -> None:
     while True:
         titulo("Banco de Dados Oracle")
-        print("1. Configurar conexao")
-        print("2. Testar conexao")
-        print("3. Criar tabelas estruturais")
-        print("4. Sincronizar dados locais (JSON -> Oracle)")
-        print("5. Listar atendimentos salvos no Oracle")
+        print("1. Configurar credenciais de conexao")
+        print("2. Testar conexao com o servidor")
+        print("4. Sincronizar dados locais (JSON -> Tabelas Oficiais)")
+        print("5. Listar atendimentos direto do Oracle")
         print("0. Voltar")
 
         opcao = input("\nOpcao: ").strip()
@@ -486,18 +416,16 @@ def menu_oracle() -> None:
             return
 
         if opcao == "1":
-            configuring = configurar_conexao()
+            configurar_conexao()
             pausar()
-        elif opcao in ("2", "3", "4", "5"):
+        elif opcao in ("2", "4", "5"):
             config = obter_configuracao()
             if opcao == "2":
                 testar_conexao(config)
-            elif opcao == "3":
-                criar_tabelas_demo(config)
             elif opcao == "4":
                 sincronizar_dados_locais(config)
             elif opcao == "5":
-                listar_atendimentos_demo(config)
+                listar_atendimentos_oficiais(config)
             pausar()
         else:
             print("Opcao invalida.")
