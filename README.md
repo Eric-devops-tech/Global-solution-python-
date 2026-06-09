@@ -22,6 +22,7 @@ Execute o comando dentro da pasta `astracare`.
 - Relatorios de risco e casos criticos.
 - Gravacao de dados em JSON.
 - Geracao de relatorio em TXT.
+- Atualização de arquivos locais para o Banco de Dados
 - Conexao demonstrativa com Oracle Database.
 
 ## Estrutura
